@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LV Lims parannukset
 // @namespace    http://github.com/lewisohn/lims
-// @version      0.1
+// @version      0.1.1
 // @description  Kokoelma hyödyllisiä parannuksia
 // @author       Oliver Lewisohn
 // @match        https://mlabs0014:8443/labvantage/rc*
