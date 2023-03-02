@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LV Lims parannukset
 // @namespace    http://github.com/lewisohn/lims
-// @version      0.1.5
+// @version      0.1.6
 // @description  Kokoelma hyödyllisiä parannuksia
 // @author       Oliver Lewisohn
 // @match        https://mlabs0014:8443/labvantage/rc*
@@ -25,21 +25,48 @@ window.addEventListener('keydown', (e) => { // palautetaan Ctrl+A:n alkuperäist
     }
 }, true);
 
+if (window.frameElement && (window.frameElement.id == "_nav_frame1")) { // mahdollistetaan useamman rivin liittäminen näytteen taustakenttään
+    if (document.querySelector("#pr0_u_sampleorigin")) {
+        document.querySelector("#pr0_u_sampleorigin").addEventListener("paste", (e) => {
+            e.preventDefault();
+            navigator.clipboard.readText().then((clipText) => {
+                let textArea = document.activeElement;
+                let text = textArea.value;
+                text = text.slice(0, textArea.selectionStart) + clipText + text.slice(textArea.selectionEnd);
+                textArea.value = text;
+                textArea.dispatchEvent(new Event("change"));
+            });
+        });
+    }
+}
+
+
 if (/^.*CRL_(Request|Sample)AuditView.*$/.test(window.location.toLocaleString())) { // loki-ikkunan koko määräytyy kunnolla ja vierityspalkit toimivat
     document.getElementById("auditdatadiv").removeAttribute("style");
 }
 
 if (window.frameElement) {
     let url = window.parent.location.toLocaleString();
-    if (/^dlg_frame[0-9]+$/.test(window.frameElement.id) && (/^.*CRL_(Request|Sample).*Maint1$/.test(url))) { // tilauksen tai näytteen muokkaussivu, päivämäärämodaali
-        let focused = setInterval(() => {
-            let timefield = document.getElementById("timefield");
-            if (timefield) {
-                timefield.focus();
-                timefield.select();
-                clearInterval(focused);
-            }
-        }, 100);
+    if (/^dlg_frame[0-9]+$/.test(window.frameElement.id)) {
+        if (/^.*CRL_(Request|Sample).*Maint1$/.test(url)) {
+            let focused = setInterval(() => {
+                let field = document.getElementById("timefield");
+                if (field) {
+                    field.focus();
+                    field.select();
+                    clearInterval(focused);
+                }
+            }, 100);
+        }
+        else if (/^.*CRL_CustomerList.*$/.test(url)) {
+            let focused = setTimeout(() => {
+                let field = document.getElementById("maint_iframe").contentDocument.body.querySelector("#pr0_firstname"); // This is so hacky... it's not my fault they reuse the same IDs multiple times
+                if (field) {
+                    field.focus();
+                    field.select();
+                }
+            }, 500);
+        }
     }
 }
 
