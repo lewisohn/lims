@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LV Lims parannukset
 // @namespace    http://github.com/lewisohn/lims
-// @version      0.1.6
+// @version      0.1.7
 // @description  Kokoelma hyödyllisiä parannuksia
 // @author       Oliver Lewisohn
 // @match        https://mlabs0014:8443/labvantage/rc*
@@ -11,12 +11,11 @@
 
 /*jshint esversion: 6 */
 
-var widened, hinted;
+var widened = false;
+var hinted = false;
 
 window.addEventListener("load", () => { // jotkut parannukset vaativat sen, että tarkistetaan tilanne aina kun sivu muuttuu
     (new MutationObserver(check)).observe(document, { childList: true, subtree: true });
-    widened = false;
-    hinted = false;
 });
 
 window.addEventListener('keydown', (e) => { // palautetaan Ctrl+A:n alkuperäistoiminta "valitse kaikki"
@@ -48,7 +47,7 @@ if (/^.*CRL_(Request|Sample)AuditView.*$/.test(window.location.toLocaleString())
 if (window.frameElement) {
     let url = window.parent.location.toLocaleString();
     if (/^dlg_frame[0-9]+$/.test(window.frameElement.id)) {
-        if (/^.*CRL_(Request|Sample).*Maint1$/.test(url)) {
+        if (/^.*CRL_(Request|Sample).*Maint1$/.test(url)) { // kun päivämäärämodaali avataan, siirretään kursori kellonaikakenttään
             let focused = setInterval(() => {
                 let field = document.getElementById("timefield");
                 if (field) {
@@ -58,9 +57,9 @@ if (window.frameElement) {
                 }
             }, 100);
         }
-        else if (/^.*CRL_CustomerList.*$/.test(url)) {
+        else if (/^.*CRL_CustomerList.*$/.test(url)) { // kun asiakasrekisterin kontaktimodaali avataan, siirretään kursori etunimikenttään
             let focused = setTimeout(() => {
-                let field = document.getElementById("maint_iframe").contentDocument.body.querySelector("#pr0_firstname"); // This is so hacky... it's not my fault they reuse the same IDs multiple times
+                let field = document.getElementById("maint_iframe").contentDocument.body.querySelector("#pr0_firstname"); // ruma kuin mikä
                 if (field) {
                     field.focus();
                     field.select();
@@ -77,14 +76,15 @@ function check() {
             if (/^.*CRL_Request.*Maint1$/.test(url)) { // tilaussivu
                 test(document.getElementById("dynamicgridA_tabtitle")); // onko tilauksella näytteitä?
                 test(document.getElementById("dynamicgridB_tabtitle")); // onko tilauksen jakelu tyhjä?
-                dd(); // onko "DD"-ruutu määräajan automaattisen laskemisen ohittamiselle valittu?
-                widen(); // levennetään tilauksen kuvauskentät
+                dd();
+                widen();
             }
             if (/^.*CRL_Sample.*Maint1$/.test(url)) { // näytesivu
                 test(document.getElementById("dynamicdatasetgrid_tabtitle")); // onko näytteellä testejä?
             }
             if (/^.*CRL_(Request|Sample).*Maint1$/.test(url)) { // tilaus- tai näytesivu
                 rightClickToClear();
+                checkForWeekend();
             }
             if (/^.*CRL_Sample.*Maint1MultiTest$/.test(url)) { // näytteen muokkaussivu
                 hint();
@@ -93,19 +93,38 @@ function check() {
     }
 }
 
-function widen() {
+function checkForWeekend() { // määräaikakenttä värjäytyy oranssiksi, jos päivä osuu viikonloppuun
+    let ddfields = document.querySelectorAll('[id^="dynamicgridA"][id$="_duedt"]');
+    if (ddfields.length > 0) {
+        ddfields.forEach(ddfield => {
+            if (!ddfield.hasAttribute("data-weekend-check")) {
+                ddfield.addEventListener("change", (e) => {
+                    if (ddfield.value.length > 0) {
+                        let parts = ddfield.value.match(/[0-9]{1,2}\.[0-9]{1,2}\.[0-9]{4}/)[0].split(".")
+                        let date = new Date(parts[2], parts[1] - 1, parts[0]);
+                        orange(ddfield, (date.getDay() % 6 == 0))
+                    }
+                    else orange(ddfield, false);
+                });
+                ddfield.setAttribute("data-weekend-check", "");
+            }
+        });
+    }
+}
+
+function widen() { // levennetään tilauksen kuvauskentät
     if (!widened) {
         let descriptions = document.querySelectorAll("#request_fieldset td span:nth-child(2) input");
         if (descriptions.length > 0) {
             descriptions.forEach((description) => {
-                description.setAttribute("size", "54");
+                description.setAttribute("size", "57");
             });
         }
         widened = true;
     }
 }
 
-function hint() {
+function hint() { // näytteen muokkaussivun testikenttään työkaluvihje
     if (!hinted) {
         let workitemid = document.getElementById("dynamicmultimaint0_workitemid");
         if (workitemid) {
@@ -121,15 +140,15 @@ function test(element) { // apufunktio
     }
 }
 
-function orange(what, bool) { // apufunktio
+function orange(what, bool) { // korostetaan välilehden otsikko, jos se on tyhjä (esim. tilauksen jakelu)
     what.style.background = (bool ? "orange" : "none");
     what.style.boxShadow = (bool ? "0 0 0 3px orange" : "none");
 }
 
-function dd() { // apufunktio
+function dd() { // sallitaan määräajan valitsemista heti "DD"-ruudun valittua ilman välitallennusta
     let checkboxes = document.querySelectorAll('[id^="dynamicgridA"][id$="_duedtoverrideflag"]:not([id*="colheader"])');
     if (checkboxes.length > 0) {
-        checkboxes.forEach((checkbox) => {
+        checkboxes.forEach(checkbox => {
             if (!checkbox.hasAttribute("data-dd-override")) {
                 let i = checkbox.id.match(/dynamicgridA(\d+)_duedtoverrideflag/)[1];
                 let input = document.getElementById("dynamicgridA" + i + "_duedt");
@@ -152,18 +171,23 @@ function dd() { // apufunktio
     }
 }
 
-function rightClickToClear() {
-    let imgs = document.querySelectorAll(".lookup_img");
+function rightClickToClear() { // oikea klikkaus tyhjentää hakukentän (toimii tällä hetkellä tilaus- ja näytesivuilla)
+    let imgs = document.querySelectorAll(".lookup_img, .datelookup_img");
     if (imgs.length > 0) {
-        imgs.forEach((img) => {
+        imgs.forEach(img => {
             if (!img.hasAttribute("data-rightclick-override")) {
                 let input = img.closest("td").previousElementSibling.querySelector("input:first-of-type");
                 img.addEventListener("contextmenu", (e) => {
                     if ((e.button == 2) && (input.value != "")) {
-                        input.focus();
-                        input.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", code: "Backspace", keyCode: "8" }));
-                        input.removeAttribute("readonly");
                         e.preventDefault();
+                        input.focus();
+                        if (input.className == "lookup_img") {
+                            input.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", code: "Backspace", keyCode: "8" }));
+                            input.removeAttribute("readonly");
+                        } else {
+                            input.value = "";
+                            input.dispatchEvent(new Event("change"));
+                        }
                         return false;
                     }
                 });
