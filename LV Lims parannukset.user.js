@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LV Lims parannukset
 // @namespace    http://github.com/lewisohn/lims
-// @version      0.1.7
+// @version      0.1.8
 // @description  Kokoelma hyödyllisiä parannuksia
 // @author       Oliver Lewisohn
 // @match        https://mlabs0014:8443/labvantage/rc*
@@ -12,7 +12,6 @@
 /*jshint esversion: 6 */
 
 var widened = false;
-var hinted = false;
 
 window.addEventListener("load", () => { // jotkut parannukset vaativat sen, että tarkistetaan tilanne aina kun sivu muuttuu
     (new MutationObserver(check)).observe(document, { childList: true, subtree: true });
@@ -23,6 +22,47 @@ window.addEventListener('keydown', (e) => { // palautetaan Ctrl+A:n alkuperäist
         e.stopImmediatePropagation();
     }
 }, true);
+
+window.addEventListener("beforeunload", saveSessionData); // muistetaan missä oltiin ennen sivun uudelleenlatausta
+
+function check() {
+    if (window.frameElement) {
+        if (window.frameElement.id == "_nav_frame1") {
+            let url = window.parent.location.toLocaleString();
+            if (/^.*CRL_Request.*Maint1$/.test(url)) { // tilaussivu
+                isZero(document.getElementById("dynamicgridA_tabtitle")); // onko tilauksella näytteitä?
+                isZero(document.getElementById("dynamicgridB_tabtitle")); // onko tilauksen jakelu tyhjä?
+                dd(); // sallitaan määräajan valitsemista heti "DD"-ruudun valittua ilman välitallennusta
+                widen(); // levennetään tilauksen kuvauskentät
+                setTimeout(restoreSessionStorageData, 500); // muistetaan missä oltiin ennen sivun uudelleenlatausta
+                orderConfirmationScrollFix(); // korjataan tilausvahvistusvälilehden taulukko
+            }
+            if (/^.*CRL_Sample.*Maint1$/.test(url)) { // näytesivu
+                isZero(document.getElementById("dynamicdatasetgrid_tabtitle")); // onko näytteellä testejä?
+            }
+            if (/^.*CRL_(Request|Sample).*Maint1$/.test(url)) { // tilaus- tai näytesivu
+                rightClickToClear(); // oikea klikkaus tyhjentää hakukentän (toimii tällä hetkellä tilaus- ja näytesivuilla)
+                checkForWeekend(); // määräaikakenttä värjäytyy oranssiksi, jos päivä osuu viikonloppuun
+            }
+            if (/^.*CRL_Sample.*Maint1MultiTest$/.test(url)) { // näytteen muokkaussivu
+                hint(); // näytteen muokkaussivun testikenttään työkaluvihje
+                checkForWeekend(); // määräaikakenttä värjäytyy oranssiksi, jos päivä osuu viikonloppuun
+            }
+        }
+    }
+}
+
+function saveSessionData() {
+    if (window.frameElement && (window.frameElement.id == "_nav_frame1")) {
+        if (/^.*CRL_Request.*Maint1$/.test(window.parent.location.toLocaleString())) {
+            console.log("Button pressed!");
+            sessionStorage.setItem("tab", document.querySelector("._selected").parentElement.id);
+            sessionStorage.setItem("active", getActiveElement().id);
+            sessionStorage.setItem("scrollTop", document.querySelector("#maint_td").scrollTop);
+            sessionStorage.setItem("scrollLeft", document.querySelector("#dynamicgridA_tablediv").scrollLeft);
+        }
+    }
+}
 
 if (window.frameElement && (window.frameElement.id == "_nav_frame1")) { // mahdollistetaan useamman rivin liittäminen näytteen taustakenttään
     if (document.querySelector("#pr0_u_sampleorigin")) {
@@ -37,6 +77,18 @@ if (window.frameElement && (window.frameElement.id == "_nav_frame1")) { // mahdo
             });
         });
     }
+}
+
+function getActiveElement(element = document.activeElement) { // apufunktio
+    const shadowRoot = element.shadowRoot;
+    const contentDocument = element.contentDocument;
+    if (shadowRoot && shadowRoot.activeElement) {
+        return getActiveElement(shadowRoot.activeElement);
+    }
+    if (contentDocument && contentDocument.activeElement) {
+        return getActiveElement(contentDocument.activeElement);
+    }
+    return element;
 }
 
 
@@ -58,7 +110,7 @@ if (window.frameElement) {
             }, 100);
         }
         else if (/^.*CRL_CustomerList.*$/.test(url)) { // kun asiakasrekisterin kontaktimodaali avataan, siirretään kursori etunimikenttään
-            let focused = setTimeout(() => {
+            setTimeout(() => {
                 let field = document.getElementById("maint_iframe").contentDocument.body.querySelector("#pr0_firstname"); // ruma kuin mikä
                 if (field) {
                     field.focus();
@@ -69,40 +121,66 @@ if (window.frameElement) {
     }
 }
 
-function check() {
-    if (window.frameElement) {
-        if (window.frameElement.id == "_nav_frame1") {
-            let url = window.parent.location.toLocaleString();
-            if (/^.*CRL_Request.*Maint1$/.test(url)) { // tilaussivu
-                test(document.getElementById("dynamicgridA_tabtitle")); // onko tilauksella näytteitä?
-                test(document.getElementById("dynamicgridB_tabtitle")); // onko tilauksen jakelu tyhjä?
-                dd();
-                widen();
-            }
-            if (/^.*CRL_Sample.*Maint1$/.test(url)) { // näytesivu
-                test(document.getElementById("dynamicdatasetgrid_tabtitle")); // onko näytteellä testejä?
-            }
-            if (/^.*CRL_(Request|Sample).*Maint1$/.test(url)) { // tilaus- tai näytesivu
-                rightClickToClear();
-                checkForWeekend();
-            }
-            if (/^.*CRL_Sample.*Maint1MultiTest$/.test(url)) { // näytteen muokkaussivu
-                hint();
-            }
+function orderConfirmationScrollFix() { // korjataan tilausvahvistusvälilehden taulukko
+    let orderConfirmationGrid = document.getElementById("dynamicgrid_tablediv");
+    if (orderConfirmationGrid && !orderConfirmationGrid.hasAttribute("data-scroll-fix")) {
+        orderConfirmationGrid.addEventListener("scroll", () => {
+            orderConfirmationGrid.style.removeProperty("height");
+            orderConfirmationGrid.style.removeProperty("overflow");
+            orderConfirmationGrid.style.removeProperty("border-bottom");
+        });
+        orderConfirmationGrid.setAttribute("data-scroll-fix", "");
+    }
+}
+
+function restoreSessionStorageData() { // muistetaan missä oltiin ennen sivun uudelleenlatausta
+    handleSessionStorageItem("tab", (id) => {
+        const tabElement = document.getElementById(id);
+        if (tabElement) {
+            tabElement.click();
         }
+    });
+
+    handleSessionStorageItem("active", (id) => {
+        const activeElement = document.getElementById(id);
+        if (activeElement) {
+            activeElement.focus();
+        }
+    });
+
+    handleSessionStorageItem("scrollTop", (scrollTop) => {
+        const maintTdElement = document.getElementById("maint_td");
+        if (maintTdElement) {
+            maintTdElement.scroll(0, scrollTop);
+        }
+    });
+
+    handleSessionStorageItem("scrollLeft", (scrollLeft) => {
+        const dynamicGridTableDivElement = document.getElementById("dynamicgridA_tablediv");
+        if (dynamicGridTableDivElement) {
+            dynamicGridTableDivElement.scroll(scrollLeft, 0);
+        }
+    });
+}
+
+function handleSessionStorageItem(key, action) {
+    const item = sessionStorage.getItem(key);
+    if (item) {
+        action(item);
+        sessionStorage.removeItem(key);
     }
 }
 
 function checkForWeekend() { // määräaikakenttä värjäytyy oranssiksi, jos päivä osuu viikonloppuun
-    let ddfields = document.querySelectorAll('[id^="dynamicgridA"][id$="_duedt"]');
+    let ddfields = document.querySelectorAll('[id$="_duedt"]');
     if (ddfields.length > 0) {
         ddfields.forEach(ddfield => {
             if (!ddfield.hasAttribute("data-weekend-check")) {
                 ddfield.addEventListener("change", (e) => {
                     if (ddfield.value.length > 0) {
-                        let parts = ddfield.value.match(/[0-9]{1,2}\.[0-9]{1,2}\.[0-9]{4}/)[0].split(".")
+                        let parts = ddfield.value.match(/[0-9]{1,2}\.[0-9]{1,2}\.[0-9]{4}/)[0].split(".");
                         let date = new Date(parts[2], parts[1] - 1, parts[0]);
-                        orange(ddfield, (date.getDay() % 6 == 0))
+                        orange(ddfield, (date.getDay() % 6 == 0));
                     }
                     else orange(ddfield, false);
                 });
@@ -125,16 +203,13 @@ function widen() { // levennetään tilauksen kuvauskentät
 }
 
 function hint() { // näytteen muokkaussivun testikenttään työkaluvihje
-    if (!hinted) {
-        let workitemid = document.getElementById("dynamicmultimaint0_workitemid");
-        if (workitemid) {
-            workitemid.setAttribute("placeholder", "Uusi testi");
-        }
-        hinted = true;
+    let workitemid = document.getElementById("dynamicmultimaint0_workitemid");
+    if (workitemid) {
+        workitemid.setAttribute("placeholder", "Uusi testi");
     }
 }
 
-function test(element) { // apufunktio
+function isZero(element) { // apufunktio
     if (element) {
         orange(element.parentElement, (element.innerHTML == " (0)"));
     }
