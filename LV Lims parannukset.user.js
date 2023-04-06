@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LV Lims parannukset
 // @namespace    http://github.com/lewisohn/lims
-// @version      0.1.9
+// @version      0.2.0
 // @description  Kokoelma hyödyllisiä parannuksia
 // @author       Oliver Lewisohn
 // @match        https://mlabs0014:8443/labvantage/rc*
@@ -11,162 +11,105 @@
 
 /* jshint esversion: 6 */
 
-let url = top.location.href;
+/* Global variables */
+
+let windowURL = top.location.href;
+if (window.frameElement) {
+    let frameURL = window.frameElement.contentWindow.location.href;
+}
+
+/* Event listeners */
 
 window.addEventListener("load", () => { // some improvements require us to monitor the page for changes
-    (new MutationObserver(check)).observe(document, { childList: true, subtree: true });
+    (new MutationObserver(domChanged)).observe(document, { childList: true, subtree: true });
 });
 
-window.addEventListener('keydown', (e) => { // let Ctrl+A select all again (Ctrl+Alt+A bypasses this fix)
-    if (e.key == "a" && e.ctrlKey && !e.shiftKey && !e.altKey) {
+window.addEventListener('keydown', (e) => { // let Ctrl+A select all again (Ctrl+Shift+A and Ctrl+Alt+A bypass this fix)
+    if (e.key === "a" && e.ctrlKey && !e.shiftKey && !e.altKey) {
         e.stopImmediatePropagation();
     }
 }, true);
 
-window.addEventListener("beforeunload", saveSessionData); // return to previous position on refresh
+window.addEventListener("beforeunload", saveSessionData); // save request page position on refresh
 
-function check() {
-    if (top.location.href != url) {
-        url = top.location.href;
-        urlChanged(); // call this if the URL has changed, which doesn't necessarily trigger a new page load
-    }
-    if (window.frameElement) {
-        if (window.frameElement.id == "_nav_frame1") {
-            if (/^.*CRL_Request.*Maint1$/.test(url)) { // request page
-                isZero(document.getElementById("dynamicgridA_tabtitle")); // check if the request has samples
-                isZero(document.getElementById("dynamicgridB_tabtitle")); // check if the request has a distribution
-                dd(); // allow the user to input a date after selecting the due date override without having to save the request
-                rightClickToClear(); // right clicking a search or calendar icon clears the associated field
-                checkForWeekend(); // check if the due date has landed on a weekend
-            }
-            else if (/^.*CRL_Sample.*Maint1$/.test(url)) { // sample page
-                isZero(document.getElementById("dynamicdatasetgrid_tabtitle")); // check if the sample has tests
-                rightClickToClear(); // right clicking a search or calendar icon clears the associated field
-                checkForWeekend(); // check if the due date has landed on a weekend
-            }
-            else if (/^.*LV_Navigator$/.test(url)) {
-                // TODO: make the request and sample page features work in the tree view as well
-            }
-            else if (/^.*CRL_Sample.*Maint1MultiTest$/.test(url)) { // sample editing page
-                checkForWeekend(); // check if the due date has landed on a weekend
-                hint(); // placeholder text for the new test box
-            }
-        }
-    }
-}
-
-function urlChanged() {
-    if (window.frameElement) {
-        if (/^.*CRL_Request.*Maint1$/.test(url)) { // request page
-            dateSelectorFix();
-            orderConfirmationFix();
-            orderWidthFix();
-            setTimeout(restoreSessionStorageData, 500);
-        }
-        if (/^.*CRL_Sample.*Maint1$/.test(url)) { // sample page
-            dateSelectorFix();
-            pasteFix();
-        }
-        if (/^.*LV_Navigator$/.test(url) && /^.*CRL_Sample.*Maint1$/.test(document.location.href)) { // tree view
-            pasteFix();
-        }
-        if (/^.*CRL_CustomerList.*$/.test(url)) { // customer register
-            contactFix();
-        }
-    }
-    else {
-        if (/^.*CRL_(Request|Sample)AuditView.*$/.test(url)) { // log
-            logFix();
-        }
-    }
-}
-
-urlChanged(); // call this on page load
-
-/* Helper functions */
-
-function waitFor(selector, callback) { // wait for AJAX to load a given element
-    let timer = setInterval(() => {
-        if (document.querySelector(selector)) {
-            callback(document.querySelector(selector));
-            clearInterval(timer);
-        }
-    }, 100);
-}
-
-function getActiveElement(element = document.activeElement) { // get the active element recursively through iframes
-    const shadowRoot = element.shadowRoot;
-    const contentDocument = element.contentDocument;
-    if (shadowRoot && shadowRoot.activeElement) {
-        return getActiveElement(shadowRoot.activeElement);
-    }
-    if (contentDocument && contentDocument.activeElement) {
-        return getActiveElement(contentDocument.activeElement);
-    }
-    return element;
-}
-
-function isZero(element) { // check if an element is zero
-    if (element) {
-        orange(element.parentElement, (element.innerHTML == " (0)"));
-    }
-}
-
-function orange(what, bool) { // decorate something orange, or not
-    what.style.background = (bool ? "orange" : "none");
-    what.style.boxShadow = (bool ? "0 0 0 3px orange" : "none");
-}
-
-/* This function runs once before page unload */
-
-function saveSessionData() { // save page position on refresh
-    if (window.frameElement && (window.frameElement.id == "_nav_frame1")) {
-        if (/^.*CRL_Request.*Maint1$/.test(url)) {
-            sessionStorage.setItem("tab", document.querySelector("._selected").parentElement.id);
-            sessionStorage.setItem("active", getActiveElement().id);
-            sessionStorage.setItem("scrollTop", document.querySelector("#maint_td").scrollTop);
-            sessionStorage.setItem("scrollLeft", document.querySelector("#dynamicgridA_tablediv").scrollLeft);
-        }
-    }
-}
+window.addEventListener("popstate", urlChanged());
 
 /* These functions run once on page load */
 
-function dateSelectorFix() { // select the time field when opening the date modal
-    if (/^dlg_frame[0-9]+$/.test(window.frameElement.id)) {
-        waitFor("#timefield", (field) => {
-            field.focus();
-            field.select();
-        });
+function urlChanged() {
+    if (window.frameElement) {
+        frameURL = window.frameElement.contentWindow.location.href;
+        if (window.frameElement.id === "_nav_frame1" || window.frameElement.name === "pageframe") {
+            if (/CRL_Request.*Maint1$/.test(frameURL)) { // request page
+                urlChangedRequestPage();
+            }
+            if (/CRL_Sample.*Maint1$/.test(frameURL)) { // sample page
+                urlChangedSamplePage();
+            }
+        }
+        else if (/^dlg_frame[0-9]+$/.test(window.frameElement.id)) {
+            if (/calendar.jsp$/.test(frameURL)) {
+                dateSelectorFix();
+            }
+        }
+        else if (window.frameElement.id == "maint_iframe") {
+            if (/CRL_ContactMaint/.test(frameURL)) { // customer register
+                contactFix();
+            }
+        }
+    }
+    else if (/CRL_(Request|Sample)AuditView.*$/.test(windowURL)) { // log
+        logFix();
     }
 }
 
-function pasteFix() { // allow pasting multiple lines to sample origin
-    waitFor("#pr0_u_sampleorigin", (origin) => {
-        origin.addEventListener("paste", (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            navigator.clipboard.readText().then((clipText) => {
-                let textArea = document.activeElement;
-                let text = textArea.value;
-                text = text.slice(0, textArea.selectionStart) + clipText + text.slice(textArea.selectionEnd);
-                textArea.value = text;
-                textArea.dispatchEvent(new Event("change"));
-            });
-        }, true);
+function urlChangedRequestPage() {
+    scrollFix();
+    orderWidthFix();
+    setTimeout(restoreSessionStorageData, 500);
+}
+
+function urlChangedSamplePage() {
+    pasteFix();
+}
+
+function dateSelectorFix() { // select the time field when opening the date modal
+    waitFor("#timefield", (timefield) => {
+        timefield.focus();
+        timefield.select();
     });
 }
 
-function orderConfirmationFix() { // fix order confirmation list size and scroll
-    let orderConfirmationGrid = document.getElementById("dynamicgrid_tablediv");
-    if (orderConfirmationGrid && !orderConfirmationGrid.hasAttribute("data-scroll-fix")) {
-        orderConfirmationGrid.addEventListener("scroll", () => {
-            orderConfirmationGrid.style.removeProperty("height");
-            orderConfirmationGrid.style.removeProperty("overflow");
-            orderConfirmationGrid.style.removeProperty("border-bottom");
-        });
-        orderConfirmationGrid.setAttribute("data-scroll-fix", "");
-    }
+function pasteFix() { // allow pasting multiple lines to sample origin
+    waitFor("#pr0_u_sampleorigin", (sampleorigin) => {
+        if (!sampleorigin.hasAttribute("data-paste-fix")) {
+            sampleorigin.addEventListener("paste", (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                navigator.clipboard.readText().then((clipText) => {
+                    let textArea = document.activeElement;
+                    let text = textArea.value;
+                    text = text.slice(0, textArea.selectionStart) + clipText + text.slice(textArea.selectionEnd);
+                    textArea.value = text;
+                    textArea.dispatchEvent(new Event("change"));
+                });
+            }, true);
+            sampleorigin.setAttribute("data-paste-fix", "");
+        }
+    });
+}
+
+function scrollFix() { // fix order confirmation list size and scroll. TODO: make this work on first load without needing to be scrolled
+    waitFor("#dynamicgrid_tablediv", (tablediv) => {
+        if (!tablediv.hasAttribute("data-scroll-fix")) {
+            tablediv.addEventListener("scroll", () => {
+                tablediv.style.removeProperty("height");
+                tablediv.style.removeProperty("overflow");
+                tablediv.style.removeProperty("border-bottom");
+            });
+            tablediv.setAttribute("data-scroll-fix", "");
+        }
+    });
 }
 
 function orderWidthFix() { // widen the request page's description fields and invoice reference field
@@ -205,15 +148,10 @@ function restoreSessionStorageData() { // load page position after refresh
 }
 
 function contactFix() { // select the first name field when opening the contact modal
-    if (/^dlg_frame[0-9]+$/.test(window.frameElement.id)) {
-        setTimeout(() => {
-            let field = document.getElementById("maint_iframe").contentDocument.body.querySelector("#pr0_firstname"); // can't use waitFor here because of the need to look inside the iframe
-            if (field) {
-                field.focus();
-                field.select();
-            }
-        }, 500);
-    }
+    waitFor("#pr0_firstname", (firstname) => {
+        firstname.focus();
+        firstname.select();
+    });
 }
 
 function logFix() { // fix log window size and scrolling
@@ -221,6 +159,56 @@ function logFix() { // fix log window size and scrolling
 }
 
 /* These functions run whenever the page is updated */
+
+function domChanged() {
+    if (windowURL !== top.location.href) {
+        windowURL = top.location.href;
+        urlChanged(); // call this if the URL has changed, which doesn't necessarily trigger a new page load
+    }
+    if (window.frameElement) {
+        if (window.frameElement.id === "_nav_frame1") {
+            if (/CRL_Request.*Maint1$/.test(windowURL)) {
+                domChangedRequestPage();
+            }
+            else if (/CRL_Sample.*Maint1$/.test(windowURL)) {
+                domChangedSamplePage();
+            }
+            else if (/CRL_Sample.*Maint1MultiTest$/.test(windowURL)) {
+                domChangedSampleEditingPage();
+            }
+        }
+        else if (window.frameElement.name === "pageframe") {
+            if (/LV_Navigator$/.test(windowURL)) {
+                waitFor("#savedata > input[type=hidden]:nth-child(1)", (input) => {
+                    if (input.value === "Request") {
+                        domChangedRequestPage();
+                    } else if (input.value === "Sample") {
+                        domChangedSamplePage();
+                    }
+                });
+            }
+        }
+    }
+}
+
+function domChangedRequestPage() {
+    orangeIfZero(document.getElementById("dynamicgridA_tabtitle")); // check if the request has samples
+    orangeIfZero(document.getElementById("dynamicgridB_tabtitle")); // check if the request has a distribution
+    dueDateOverride(); // allow the user to input a date after selecting the due date override without having to save the request
+    rightClickToClear(); // right clicking a search or calendar icon clears the associated field
+    checkForWeekend(); // check if the due date has landed on a weekend
+}
+
+function domChangedSamplePage() {
+    orangeIfZero(document.getElementById("dynamicdatasetgrid_tabtitle")); // check if the sample has tests
+    rightClickToClear(); // right clicking a search or calendar icon clears the associated field
+    checkForWeekend(); // check if the due date has landed on a weekend
+}
+
+function domChangedSampleEditingPage() {
+    checkForWeekend(); // check if the due date has landed on a weekend
+    hint(); // placeholder text for the new test box
+}
 
 function checkForWeekend() { // check if the due date has landed on a weekend
     let ddfields = document.querySelectorAll('[id$="_duedt"]');
@@ -231,7 +219,7 @@ function checkForWeekend() { // check if the due date has landed on a weekend
                     if (ddfield.value.length > 0) {
                         let parts = ddfield.value.match(/[0-9]{1,2}\.[0-9]{1,2}\.[0-9]{4}/)[0].split(".");
                         let date = new Date(parts[2], parts[1] - 1, parts[0]);
-                        orange(ddfield, (date.getDay() % 6 == 0));
+                        orange(ddfield, (date.getDay() % 6 === 0));
                     }
                     else orange(ddfield, false);
                 });
@@ -248,7 +236,7 @@ function hint() { // placeholder text for the new test box
 }
 
 
-function dd() { // allow the user to input a date after selecting the due date override without having to save the request
+function dueDateOverride() { // allow the user to input a date after selecting the due date override without having to save the request
     let checkboxes = document.querySelectorAll('[id^="dynamicgridA"][id$="_duedtoverrideflag"]:not([id*="colheader"])');
     if (checkboxes.length > 0) {
         checkboxes.forEach(checkbox => {
@@ -281,10 +269,10 @@ function rightClickToClear() { // right clicking a search or calendar icon clear
             if (!img.hasAttribute("data-rightclick-override")) {
                 let input = img.closest("td").previousElementSibling.querySelector("input:first-of-type");
                 img.addEventListener("contextmenu", (e) => {
-                    if ((e.button == 2) && (input.value != "")) {
+                    if ((e.button === 2) && (input.value !== "")) {
                         e.preventDefault();
                         input.focus();
-                        if (input.className == "lookup_img") {
+                        if (input.className === "lookup_img") {
                             input.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", code: "Backspace", keyCode: "8" })); // jshint ignore:line
                             input.removeAttribute("readonly");
                         } else {
@@ -298,4 +286,57 @@ function rightClickToClear() { // right clicking a search or calendar icon clear
             }
         });
     }
+}
+
+/* This function runs once before page unload */
+
+function saveSessionData() { // save page position on refresh
+    if (window.frameElement && (window.frameElement.id === "_nav_frame1")) {
+        if (/CRL_Request.*Maint1$/.test(windowURL)) {
+            sessionStorage.setItem("tab", document.querySelector("._selected").parentElement.id);
+            sessionStorage.setItem("active", getActiveElement().id);
+            sessionStorage.setItem("scrollTop", document.querySelector("#maint_td").scrollTop);
+            sessionStorage.setItem("scrollLeft", document.querySelector("#dynamicgridA_tablediv").scrollLeft);
+        }
+    }
+}
+
+/* Helper functions */
+
+function waitFor(selector, callback) { // wait for AJAX to load a given element, but give up after five seconds
+    let counter = 0;
+    let timer = setInterval(() => {
+        if (document.querySelector(selector)) {
+            callback(document.querySelector(selector));
+            clearInterval(timer);
+        } else if (counter >= 50) {
+            console.log("waitFor: couldn't find element with selector " + selector)
+            clearInterval(timer);
+        } else {
+            counter++;
+        }
+    }, 100);
+}
+
+function getActiveElement(element = document.activeElement) { // get the active element recursively through iframes
+    const shadowRoot = element.shadowRoot;
+    const contentDocument = element.contentDocument;
+    if (shadowRoot && shadowRoot.activeElement) {
+        return getActiveElement(shadowRoot.activeElement);
+    }
+    if (contentDocument && contentDocument.activeElement) {
+        return getActiveElement(contentDocument.activeElement);
+    }
+    return element;
+}
+
+function orangeIfZero(element) { // check if an element is zero
+    if (element) {
+        orange(element.parentElement, (element.innerHTML === " (0)"));
+    }
+}
+
+function orange(what, bool) { // decorate something orange, or not
+    what.style.background = (bool ? "orange" : "none");
+    what.style.boxShadow = (bool ? "0 0 0 3px orange" : "none");
 }
