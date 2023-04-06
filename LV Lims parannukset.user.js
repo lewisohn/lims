@@ -14,15 +14,14 @@
 /* Global variables */
 
 let windowURL = top.location.href;
-if (window.frameElement) {
-    let frameURL = window.frameElement.contentWindow.location.href;
-}
 
 /* Event listeners */
 
-window.addEventListener("load", () => { // some improvements require us to monitor the page for changes
+window.addEventListener("load", () => { // watch for page changes
     (new MutationObserver(domChanged)).observe(document, { childList: true, subtree: true });
 });
+
+window.addEventListener("popstate", urlChanged()); // watch for navigation
 
 window.addEventListener('keydown', (e) => { // let Ctrl+A select all again (Ctrl+Shift+A and Ctrl+Alt+A bypass this fix)
     if (e.key === "a" && e.ctrlKey && !e.shiftKey && !e.altKey) {
@@ -32,18 +31,16 @@ window.addEventListener('keydown', (e) => { // let Ctrl+A select all again (Ctrl
 
 window.addEventListener("beforeunload", saveSessionData); // save request page position on refresh
 
-window.addEventListener("popstate", urlChanged());
-
 /* These functions run once on page load */
 
 function urlChanged() {
     if (window.frameElement) {
-        frameURL = window.frameElement.contentWindow.location.href;
+        let frameURL = window.frameElement.contentWindow.location.href;
         if (window.frameElement.id === "_nav_frame1" || window.frameElement.name === "pageframe") {
-            if (/CRL_Request.*Maint1$/.test(frameURL)) { // request page
+            if (/CRL_Request.*Maint1$/.test(frameURL)) {
                 urlChangedRequestPage();
             }
-            if (/CRL_Sample.*Maint1$/.test(frameURL)) { // sample page
+            if (/CRL_Sample.*Maint1$/.test(frameURL)) {
                 urlChangedSamplePage();
             }
         }
@@ -53,12 +50,12 @@ function urlChanged() {
             }
         }
         else if (window.frameElement.id == "maint_iframe") {
-            if (/CRL_ContactMaint/.test(frameURL)) { // customer register
+            if (/CRL_ContactMaint/.test(frameURL)) {
                 contactFix();
             }
         }
     }
-    else if (/CRL_(Request|Sample)AuditView.*$/.test(windowURL)) { // log
+    else if (/CRL_(Request|Sample)AuditView.*$/.test(windowURL)) {
         logFix();
     }
 }
@@ -124,6 +121,17 @@ function orderWidthFix() { // widen the request page's description fields and in
     });
 }
 
+function contactFix() { // select the first name field when opening the contact modal
+    waitFor("#pr0_firstname", (firstname) => {
+        firstname.focus();
+        firstname.select();
+    });
+}
+
+function logFix() { // fix log window size and scrolling
+    document.getElementById("auditdatadiv").removeAttribute("style");
+}
+
 function restoreSessionStorageData() { // load page position after refresh
     let tab = sessionStorage.getItem("tab");
     if (tab && document.getElementById(tab)) {
@@ -145,17 +153,6 @@ function restoreSessionStorageData() { // load page position after refresh
         document.getElementById("dynamicgridA_tablediv").scroll(scrollLeft, 0);
         sessionStorage.removeItem("scrollLeft");
     }
-}
-
-function contactFix() { // select the first name field when opening the contact modal
-    waitFor("#pr0_firstname", (firstname) => {
-        firstname.focus();
-        firstname.select();
-    });
-}
-
-function logFix() { // fix log window size and scrolling
-    document.getElementById("auditdatadiv").removeAttribute("style");
 }
 
 /* These functions run whenever the page is updated */
@@ -194,20 +191,20 @@ function domChanged() {
 function domChangedRequestPage() {
     orangeIfZero(document.getElementById("dynamicgridA_tabtitle")); // check if the request has samples
     orangeIfZero(document.getElementById("dynamicgridB_tabtitle")); // check if the request has a distribution
-    dueDateOverride(); // allow the user to input a date after selecting the due date override without having to save the request
-    rightClickToClear(); // right clicking a search or calendar icon clears the associated field
-    checkForWeekend(); // check if the due date has landed on a weekend
+    dueDateOverride();
+    rightClickToClear();
+    checkForWeekend();
 }
 
 function domChangedSamplePage() {
     orangeIfZero(document.getElementById("dynamicdatasetgrid_tabtitle")); // check if the sample has tests
-    rightClickToClear(); // right clicking a search or calendar icon clears the associated field
-    checkForWeekend(); // check if the due date has landed on a weekend
+    rightClickToClear();
+    checkForWeekend();
 }
 
 function domChangedSampleEditingPage() {
-    checkForWeekend(); // check if the due date has landed on a weekend
-    hint(); // placeholder text for the new test box
+    checkForWeekend();
+    hint();
 }
 
 function checkForWeekend() { // check if the due date has landed on a weekend
@@ -310,7 +307,6 @@ function waitFor(selector, callback) { // wait for AJAX to load a given element,
             callback(document.querySelector(selector));
             clearInterval(timer);
         } else if (counter >= 50) {
-            console.log("waitFor: couldn't find element with selector " + selector)
             clearInterval(timer);
         } else {
             counter++;
