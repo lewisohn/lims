@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LV Lims parannukset
 // @namespace    http://github.com/lewisohn/lims
-// @version      0.2.0
+// @version      0.2.1
 // @description  Kokoelma hyödyllisiä parannuksia
 // @author       Oliver Lewisohn
 // @match        https://mlabs0014:8443/labvantage/rc*
@@ -23,9 +23,9 @@ window.addEventListener("load", () => { // watch for page changes
 
 window.addEventListener("popstate", urlChanged()); // watch for navigation
 
-window.addEventListener('keydown', (e) => { // let Ctrl+A select all again (Ctrl+Shift+A and Ctrl+Alt+A bypass this fix)
-    if (e.key === "a" && e.ctrlKey && !e.shiftKey && !e.altKey) {
-        e.stopImmediatePropagation();
+window.addEventListener('keydown', (event) => { // let Ctrl+A select all again (Ctrl+Shift+A and Ctrl+Alt+A bypass this fix)
+    if (event.key === "a" && event.ctrlKey && !event.shiftKey && !event.altKey) {
+        event.stopImmediatePropagation();
     }
 }, true);
 
@@ -155,6 +155,9 @@ function restoreSessionStorageData() { // load page position after refresh
     }
 }
 
+document.querySelector("#layout_header > div.header_back").style.background = "BlueViolet";
+document.querySelector("#layout_header > div.header_front > table > tbody > tr > td > div > div.link_btns_cont").style.background = "BlueViolet";
+
 /* These functions run whenever the page is updated */
 
 function domChanged() {
@@ -191,28 +194,28 @@ function domChanged() {
 function domChangedRequestPage() {
     orangeIfZero(document.getElementById("dynamicgridA_tabtitle")); // check if the request has samples
     orangeIfZero(document.getElementById("dynamicgridB_tabtitle")); // check if the request has a distribution
-    dueDateOverride();
-    rightClickToClear();
-    checkForWeekend();
+    ddOverride();
+    rightClickClears();
+    weekendCheck();
 }
 
 function domChangedSamplePage() {
     orangeIfZero(document.getElementById("dynamicdatasetgrid_tabtitle")); // check if the sample has tests
-    rightClickToClear();
-    checkForWeekend();
+    rightClickClears();
+    weekendCheck();
 }
 
 function domChangedSampleEditingPage() {
-    checkForWeekend();
+    weekendCheck();
     hint();
 }
 
-function checkForWeekend() { // check if the due date has landed on a weekend
+function weekendCheck() { // check if the due date has landed on a weekend
     let ddfields = document.querySelectorAll('[id$="_duedt"]');
     if (ddfields.length > 0) {
         ddfields.forEach(ddfield => {
             if (!ddfield.hasAttribute("data-weekend-check")) {
-                ddfield.addEventListener("change", (e) => {
+                ddfield.addEventListener("change", () => {
                     if (ddfield.value.length > 0) {
                         let parts = ddfield.value.match(/[0-9]{1,2}\.[0-9]{1,2}\.[0-9]{4}/)[0].split(".");
                         let date = new Date(parts[2], parts[1] - 1, parts[0]);
@@ -233,7 +236,7 @@ function hint() { // placeholder text for the new test box
 }
 
 
-function dueDateOverride() { // allow the user to input a date after selecting the due date override without having to save the request
+function ddOverride() { // allow the user to input a date after selecting the due date override without having to save the request
     let checkboxes = document.querySelectorAll('[id^="dynamicgridA"][id$="_duedtoverrideflag"]:not([id*="colheader"])');
     if (checkboxes.length > 0) {
         checkboxes.forEach(checkbox => {
@@ -259,15 +262,15 @@ function dueDateOverride() { // allow the user to input a date after selecting t
     }
 }
 
-function rightClickToClear() { // right clicking a search or calendar icon clears the associated field
+function rightClickClears() { // right clicking a search or calendar icon clears the associated field
     let imgs = document.querySelectorAll(".lookup_img, .datelookup_img");
     if (imgs.length > 0) {
         imgs.forEach(img => {
-            if (!img.hasAttribute("data-rightclick-override")) {
+            if (!img.hasAttribute("data-rightclick-clears")) {
                 let input = img.closest("td").previousElementSibling.querySelector("input:first-of-type");
-                img.addEventListener("contextmenu", (e) => {
-                    if ((e.button === 2) && (input.value !== "")) {
-                        e.preventDefault();
+                img.addEventListener("contextmenu", (event) => {
+                    if ((event.button === 2) && (input.value !== "")) {
+                        event.preventDefault();
                         input.focus();
                         if (input.className === "lookup_img") {
                             input.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", code: "Backspace", keyCode: "8" })); // jshint ignore:line
@@ -279,7 +282,7 @@ function rightClickToClear() { // right clicking a search or calendar icon clear
                         return false;
                     }
                 });
-                img.setAttribute("data-rightclick-override", "");
+                img.setAttribute("data-rightclick-clears", "");
             }
         });
     }
