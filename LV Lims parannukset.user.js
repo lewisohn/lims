@@ -155,8 +155,8 @@ function restoreSessionStorageData() { // load page position after refresh
     }
 }
 
-document.querySelector("#layout_header > div.header_back").style.background = "BlueViolet";
-document.querySelector("#layout_header > div.header_front > table > tbody > tr > td > div > div.link_btns_cont").style.background = "BlueViolet";
+document.querySelector("#layout_header > div.header_back").style.background = "#ff00b0";
+document.querySelector("#layout_header > div.header_front > table > tbody > tr > td > div > div.link_btns_cont").style.background = "#ff00b0";
 
 /* These functions run whenever the page is updated */
 
