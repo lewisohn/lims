@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LV Lims parannukset
 // @namespace    http://github.com/lewisohn/lims
-// @version      0.2.1
+// @version      0.2.2
 // @description  Kokoelma hyödyllisiä parannuksia
 // @author       Oliver Lewisohn
 // @match        https://mlabs0014:8443/labvantage/rc*
@@ -29,7 +29,7 @@ window.addEventListener('keydown', (event) => { // let Ctrl+A select all again (
     }
 }, true);
 
-window.addEventListener("beforeunload", saveSessionData); // save request page position on refresh
+// window.addEventListener("beforeunload", saveSessionData); // save request page position on refresh
 
 /* These functions run once on page load */
 
@@ -61,9 +61,9 @@ function urlChanged() {
 }
 
 function urlChangedRequestPage() {
-    scrollFix();
+    // scrollFix();
     orderWidthFix();
-    setTimeout(restoreSessionStorageData, 500);
+    // setTimeout(restoreSessionStorageData, 500);
 }
 
 function urlChangedSamplePage() {
@@ -96,7 +96,7 @@ function pasteFix() { // allow pasting multiple lines to sample origin
     });
 }
 
-function scrollFix() { // fix order confirmation list size and scroll. TODO: make this work on first load without needing to be scrolled
+/* function scrollFix() { // fix order confirmation list size and scroll. TODO: make this work on first load without needing to be scrolled
     waitFor("#dynamicgrid_tablediv", (tablediv) => {
         if (!tablediv.hasAttribute("data-scroll-fix")) {
             tablediv.addEventListener("scroll", () => {
@@ -107,7 +107,7 @@ function scrollFix() { // fix order confirmation list size and scroll. TODO: mak
             tablediv.setAttribute("data-scroll-fix", "");
         }
     });
-}
+} */
 
 function orderWidthFix() { // widen the request page's description fields and invoice reference field
     let descriptions = document.querySelectorAll("#request_fieldset td span:nth-child(2) input");
@@ -116,6 +116,9 @@ function orderWidthFix() { // widen the request page's description fields and in
             description.setAttribute("size", "57");
         });
     }
+    waitFor("#pr0_crl_laboratoryid", (laboratoryid) => {
+        laboratoryid.style.width = "145px";
+    });
     waitFor("#pr0_inv_reference", (reference) => {
         reference.setAttribute("size", "40");
     });
@@ -132,7 +135,7 @@ function logFix() { // fix log window size and scrolling
     document.getElementById("auditdatadiv").removeAttribute("style");
 }
 
-function restoreSessionStorageData() { // load page position after refresh
+/* function restoreSessionStorageData() { // load page position after refresh
     let tab = sessionStorage.getItem("tab");
     if (tab && document.getElementById(tab)) {
         document.getElementById(tab).click();
@@ -153,10 +156,17 @@ function restoreSessionStorageData() { // load page position after refresh
         document.getElementById("dynamicgridA_tablediv").scroll(scrollLeft, 0);
         sessionStorage.removeItem("scrollLeft");
     }
-}
+} */
 
-document.querySelector("#layout_header > div.header_back").style.background = "#ff00b0";
-document.querySelector("#layout_header > div.header_front > table > tbody > tr > td > div > div.link_btns_cont").style.background = "#ff00b0";
+waitFor("#layout_header > div.header_back", (headerback) => { // make main toolbar background MLab pink
+    headerback.style.background = "#ff00b0";
+});
+waitFor("#layout_header > div.header_front > table > tbody > tr > td > div > div.link_btns_cont", (linkbtnscont) => { // make right-side toolbar buttons background MLab pink
+    linkbtnscont.style.background = "#ff00b0";
+});
+
+
+
 
 /* These functions run whenever the page is updated */
 
@@ -197,6 +207,7 @@ function domChangedRequestPage() {
     ddOverride();
     rightClickClears();
     weekendCheck();
+    infoButtonOpensPopup();
 }
 
 function domChangedSamplePage() {
@@ -262,7 +273,7 @@ function ddOverride() { // allow the user to input a date after selecting the du
     }
 }
 
-function rightClickClears() { // right clicking a search or calendar icon clears the associated field
+function rightClickClears() { // right-clicking a search or calendar icon clears the associated field
     let imgs = document.querySelectorAll(".lookup_img, .datelookup_img");
     if (imgs.length > 0) {
         imgs.forEach(img => {
@@ -288,9 +299,33 @@ function rightClickClears() { // right clicking a search or calendar icon clears
     }
 }
 
+function infoButtonOpensPopup() { // left-clicking the customer information button opens the register popup
+    waitFor("#pr0_custinstructions", (custinstructions) => {
+        attachInfoButtonListeners(custinstructions, document.getElementById("pr0_crl_customeraddressid_title"));
+    });
+    waitFor("#pr0_payerinstructions", (payerinstructions) => {
+        attachInfoButtonListeners(payerinstructions, document.getElementById("pr0_crl_differentpayerflag_title"));
+    });
+}
+
+function attachInfoButtonListeners(button, link) {
+    if (!button.hasAttribute("data-infobutton-opens-popup")) {
+        button.addEventListener("click", () => {
+            link.dispatchEvent(new Event("click", { bubbles: true }));
+        });
+        button.addEventListener("mouseover", () => {
+            button.style.cursor = "pointer";
+        });
+        button.addEventListener("mousout", () => {
+            button.style.cursor = "default";
+        });
+        button.setAttribute("data-infobutton-opens-popup", "");
+    }
+}
+
 /* This function runs once before page unload */
 
-function saveSessionData() { // save page position on refresh
+/* function saveSessionData() { // save page position on refresh
     if (window.frameElement && (window.frameElement.id === "_nav_frame1")) {
         if (/CRL_Request.*Maint1$/.test(windowURL)) {
             sessionStorage.setItem("tab", document.querySelector("._selected").parentElement.id);
@@ -299,7 +334,7 @@ function saveSessionData() { // save page position on refresh
             sessionStorage.setItem("scrollLeft", document.querySelector("#dynamicgridA_tablediv").scrollLeft);
         }
     }
-}
+} */
 
 /* Helper functions */
 
